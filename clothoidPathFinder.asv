@@ -18,6 +18,7 @@ classdef clothoidPathFinder
         
         % target
         targetYPos
+        xBestDubins
         
         % results containers
         t_arr
@@ -91,7 +92,7 @@ classdef clothoidPathFinder
             hold on
             
             x1 = obj.getBestDubins2Line(obj.initXPos);
-            
+            obj.xBestDubins = x1;
             [times, control] = obj.getApproximationFromDubins(x1);
             [times, control] = obj.initFromTable(times, control);
             
@@ -105,48 +106,57 @@ classdef clothoidPathFinder
             
             obj.controlVector = control;
             
-            %% Test 
             
-
             %% Optimization part
-            tic
-            for p=1:100:1000
-               
-               obj.p_parameter = p;
-
-%                gs = GlobalSearch;
-%                problem = createOptimProblem('fmincon','x0',times,...
-%                             'objective',@obj.func,'lb',times*0-5,'ub',times*0+5);
-%                times = run(gs,problem);
-
-%                times = fminsearch(@obj.func, times); 
-
-               times = fminunc(@obj.func, times);
-                
-                global dy dth dfi
-                if abs(dy)+abs(rad2deg(dth))+abs(rad2deg(dfi)) < 0.01
-                    disp([abs(dy) abs(dth) abs(dfi)]);
-                   break; 
-                end
-
-            end
-            toc
-            clc
+           
+%             A = eye(5);
+%             b = [0; 0; 0; 0; 0];
+            
+            
+            times = fmincon(@obj.func, times,...
+                [], [], [],[],...
+                [0, 0, 0, 0, 0],[25, 25, 25, 25, 25], @obj.mycon);
+            
             [x_n, y_n, th_n, fi_n] = obj.buildPathNumeracly(times, control,...
                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(times, control,...
                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             
+            disp([x_a, y_a, th_a, fi_a])
+            
             x = obj.pos_x; y = obj.pos_y;
             
-            if norm([x_n, y_n, th_n, fi_n]-[x_a, y_a, th_a, fi_a]) > 0.1
-                a = 1;
-            end
+        end
+        
+        function [c,ceq] = mycon(obj, switch_times)
+            
+            c = [];
+            
+            x0 = obj.initXPos;
+            y0 = obj.initYPos;
+            th0 = obj.initHeading;
+            fi0 = obj.initSteeringAngle;
+            
+           
+            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(switch_times, obj.controlVector, ...
+                x0, y0, th0, fi0);
+            
+            ceq(1) = y_a;
+            ceq(2) = th_a;
+            ceq(3) = fi_a;
+
         end
         
         function [J] = func(obj, switch_times)
     
-            p = obj.p_parameter;
+            J = sum(switch_times.^2);
+            
+            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(switch_times, obj.controlVector, ...
+                x0, y0, th0, fi0);
+            
+            return;
+            
+            p = 100;%obj.p_parameter;
 
             x0 = obj.initXPos;
             y0 = obj.initYPos;
@@ -156,13 +166,14 @@ classdef clothoidPathFinder
            
             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(switch_times, obj.controlVector, ...
                 x0, y0, th0, fi0);
-
+            
             y_target = obj.targetYPos;
 
             swtc = abs(min(0, switch_times));
 
             % TODO: задать и обосновать коэффициент
-            J = p*( 100*(y_a-y_target)^2 + 1000*th_a^2 + 1000*fi_a^2 + 1000*norm(swtc)*norm(swtc)) + 100*sum(abs(switch_times));
+            J = p*( (obj.xBestDubins-x_a)^2 + 100*(y_a-y_target)^2 + 1000*th_a^2 + 1000*fi_a^2 + 10000*norm(swtc)*norm(swtc))...
+                + 1000*sum(abs(switch_times));
 
             
             global dy dth dfi
@@ -213,26 +224,26 @@ classdef clothoidPathFinder
                     [x, y, th, fi, time_interval] = ...
                     obj.getKlothoideTransition(x, y, th, fi, turn_sign, current_switch_time);
                     
-                    disp(["Klothoide",  x, y, th, fi]);
+%                     disp(["Klothoide",  x, y, th, fi]);
                     
                     if current_switch_time>time_interval
                         residual_time_interval = current_switch_time-time_interval;
                         [x, y, th, fi, not_used] = ...
                         obj.getCircleTransition(x, y, th, fi, residual_time_interval);
                     
-                        disp(["Circle",  x, y, th, fi]);
+%                         disp(["Circle",  x, y, th, fi]);
                     end
                 else
                     if abs(fi)<deg2rad(0.05)
                         [x, y, th, fi, not_used] = ...
                         obj.getLineTransition(x, y, th, fi, current_switch_time);
                     
-                        disp(["Line",  x, y, th, fi]);
+%                         disp(["Line",  x, y, th, fi]);
                     else
                         [x, y, th, fi, not_used] = ...
                         obj.getCircleTransition(x, y, th, fi, current_switch_time);
                     
-                        disp(["Circle",  x, y, th, fi]);
+%                         disp(["Circle",  x, y, th, fi]);
                     end
                 end
                 i = i + 1;
@@ -364,7 +375,7 @@ classdef clothoidPathFinder
                         u = table_of_switch(1);
                         h = switch_fnc_params(1)/stepDivider;
 %                         disp(h);
-                        disp([x, y, th, fi]);
+%                         disp([x, y, th, fi]);
                     end
 
                     % contain data
@@ -388,7 +399,7 @@ classdef clothoidPathFinder
                 
                 %TODO: flag to show plot
                 hold on
-                plot(obj.pos_x, obj.pos_y, 'LineWidth', 0.1); grid on; grid minor; axis equal
+                plot(obj.pos_x, obj.pos_y, 'LineWidth', 2.1); grid on; grid minor; axis equal
                 
                 if obj.isDrawArrows == 1
                     quiver(obj.pos_x(1:50:end), obj.pos_y(1:50:end),...

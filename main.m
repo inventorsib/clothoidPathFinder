@@ -1,18 +1,16 @@
 %% TODO:
-% Продолжение по параметру
-%
+
 %%
 initXPos = 0;
-initYPos = 22.8468;
-% global gFI
-initHeading = 2.6131; 
-initSteeringAngle = -0.0074; 
-targetYPos = 0; 
+initYPos = 0;
+initHeading = 3.14; 
+initSteeringAngle = 0; 
+targetYPos = 5; 
 
-velocity =  1.388;
+velocity =  1.3889;
 wheelBase = 2.6; 
-maxSteeringAngle = deg2rad(20);
-maxSteeringVelocity = 1+0.2;
+maxSteeringAngle = 0.5;
+maxSteeringVelocity = 10.34;
 
 clc
 CPF = clothoidPathFinder(initXPos, initYPos, initHeading, initSteeringAngle,...
@@ -26,5 +24,5 @@ CPF.isDrawArrows = 1;
 % [resultsOfTest, initStates, T, C] = CPF.test(2000);
 % plot(resultsOfTest, 'LineWidth', 2); grid on; grid minor;
  
-CPF.findPath();
+[x, y] = CPF.findPath();
 

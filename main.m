@@ -12,7 +12,7 @@ targetYPos = 0;
 velocity =  1.388;
 wheelBase = 2.6; 
 maxSteeringAngle = deg2rad(20);
-maxSteeringVelocity = 0.34;
+maxSteeringVelocity = 1+0.34;
 
 clc
 CPF = clothoidPathFinder(initXPos, initYPos, initHeading, initSteeringAngle,...

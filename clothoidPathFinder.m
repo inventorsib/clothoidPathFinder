@@ -97,38 +97,96 @@ classdef clothoidPathFinder
             [times, control] = obj.initFromTable(times, control);
             
             control = obj.maxSteeringVelocity*control;
+            obj.controlVector = control;
 
-
-%             obj.controlVector = [0.2000,   -0.2000,  0,    -0.2000,   0.2000]; %control;
-%             control = obj.controlVector;
+            obj.controlVector = control;
 
             if obj.isDrawFirstNumerical == 1
                 obj.buildPathNumeracly(times, control,...
                     obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             end
             
-          
+%           for i=1:2000
+%             d1 = randn*0.1;
+%             d2 = randn*0.1;
+%             d3 = randn*0.1;
+%             disp([d1, d2, d3])
+%             obj.buildPathNumeracly(times, control+[0, 0, d1, d2, d3],...
+%             obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+%           end
+
+
             %% Optimization part
-           
-%             A = eye(5);
-%             b = [0; 0; 0; 0; 0];
+
+            options = optimoptions('fminunc', 'FiniteDifferenceStepSize', 0.00001, ...
+                'FiniteDifferenceType', 'central', ...
+                'UseParallel', true);
             
-            
-            times = fmincon(@obj.func, times,...
-                [], [], [],[],...
-                [1, 1, 1, 1, 1],[1, 1, 1, 1, 1]*30, @obj.mycon);
-            
+            global DY DTH DFI
+            DY = []; DTH = []; DFI = [];
+
+
+            %%
+            times = [0 0];
+
+            for p = 100:10000:100000
+                obj.p_parameter = p;
+                times = fminunc(@obj.func, times, options);
+            end
+
             [x_n, y_n, th_n, fi_n] = obj.buildPathNumeracly(times, control,...
                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(times, control,...
                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             
-            disp([x_a, y_a, th_a, fi_a])
+            disp([x_a, y_a, th_a, fi_a]-[x_n, y_n, th_n, fi_n])
             
             x = obj.pos_x; y = obj.pos_y;
             
         end
+
+        %% OLD
+        function [J] = func(obj, switch_times2)
+
+
+            switch_times = [16.3282,...
+                0.2605,...
+                10.3387,...
+                3.8822+switch_times2(1),...
+                0.2605+switch_times2(2)];
+            
+            p = obj.p_parameter;
+
+            x0 = obj.initXPos;
+            y0 = obj.initYPos;
+            th0 = obj.initHeading;
+            fi0 = obj.initSteeringAngle;
+            
+           
+            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(switch_times, obj.controlVector, ...
+                x0, y0, th0, fi0);
+            
+            y_target = obj.targetYPos;
+
+            swtc = abs(min(0, switch_times));
+
+            % TODO: задать и обосновать коэффициент
+            J = p*(0.0*(y_a-y_target)^2 + abs(rad2deg(th_a))^2 + abs(rad2deg(fi_a))^2 + 0*norm(swtc)*norm(swtc))...
+                + 0*sum(abs(switch_times));
+
+            
+            global dy dth dfi
+            dy = abs(y_a-y_target);
+            dth = abs(rad2deg(th_a));
+            dfi = abs(rad2deg(fi_a));
+
+            global DY DTH DFI
+            DY = [DY dy]; DTH = [DTH dth]; DFI = [DFI dfi];
+
+        end
         
+
+        %% NEW
         function [c,ceq] = mycon(obj, switch_times)
             
             c = [];
@@ -147,8 +205,8 @@ classdef clothoidPathFinder
 
         end
         
-        function [J] = func(obj, switch_times)
-    
+        function [J] = func_con(obj, switch_times)
+            
             J = sum(switch_times);
             
             x0 = obj.initXPos;
@@ -162,34 +220,9 @@ classdef clothoidPathFinder
             J = J + y_a^2 + th_a^2 + fi_a^2;
             
             return;
-            
-            p = 100;%obj.p_parameter;
-
-            x0 = obj.initXPos;
-            y0 = obj.initYPos;
-            th0 = obj.initHeading;
-            fi0 = obj.initSteeringAngle;
-            
-           
-            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(switch_times, obj.controlVector, ...
-                x0, y0, th0, fi0);
-            
-            y_target = obj.targetYPos;
-
-            swtc = abs(min(0, switch_times));
-
-            % TODO: задать и обосновать коэффициент
-            J = p*( (obj.xBestDubins-x_a)^2 + 100*(y_a-y_target)^2 + 1000*th_a^2 + 1000*fi_a^2 + 10000*norm(swtc)*norm(swtc))...
-                + 1000*sum(abs(switch_times));
-
-            
-            global dy dth dfi
-            dy = abs(y_a-y_target);
-            dth = abs(th_a);
-            dfi = abs(fi_a);
-
         end
-        
+
+       
         %% Get best Dubins path to line
         function [best_x1] = getBestDubins2Line(obj, x0)
     
@@ -412,7 +445,7 @@ classdef clothoidPathFinder
                     quiver(obj.pos_x(1:50:end), obj.pos_y(1:50:end),...
                         obj.x_dir_arr(1:50:end), obj.y_dir_arr(1:50:end), 0.3)
                 end
-              disp([x, y, th, fi]);
+%               disp([x, y, th, fi]);
 
 %               hold on;
 %               plot(obj.t_arr, obj.fi_arr, 'LineWidth', 2); grid on; grid minor
@@ -492,6 +525,7 @@ classdef clothoidPathFinder
             end
             
         end
+        
         %% Get initial control approximation from Dubins
         function [t,u] = initFromTable(obj, times, control)
 

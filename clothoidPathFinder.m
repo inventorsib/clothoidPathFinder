@@ -97,16 +97,17 @@ classdef clothoidPathFinder
             [times, control] = obj.initFromTable(times, control);
             
             control = obj.maxSteeringVelocity*control;
-            
+
+
+%             obj.controlVector = [0.2000,   -0.2000,  0,    -0.2000,   0.2000]; %control;
+%             control = obj.controlVector;
+
             if obj.isDrawFirstNumerical == 1
-                
                 obj.buildPathNumeracly(times, control,...
                     obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             end
             
-            obj.controlVector = control;
-            
-            
+          
             %% Optimization part
            
 %             A = eye(5);
@@ -115,7 +116,7 @@ classdef clothoidPathFinder
             
             times = fmincon(@obj.func, times,...
                 [], [], [],[],...
-                [0, 0, 0, 0, 0],[25, 25, 25, 25, 25], @obj.mycon);
+                [1, 1, 1, 1, 1],[1, 1, 1, 1, 1]*30, @obj.mycon);
             
             [x_n, y_n, th_n, fi_n] = obj.buildPathNumeracly(times, control,...
                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
@@ -137,7 +138,6 @@ classdef clothoidPathFinder
             th0 = obj.initHeading;
             fi0 = obj.initSteeringAngle;
             
-           
             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(switch_times, obj.controlVector, ...
                 x0, y0, th0, fi0);
             
@@ -149,9 +149,7 @@ classdef clothoidPathFinder
         
         function [J] = func(obj, switch_times)
     
-            J = sum(switch_times.^2);
-            
-            return;
+            J = sum(switch_times);
             
             x0 = obj.initXPos;
             y0 = obj.initYPos;

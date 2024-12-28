@@ -12,13 +12,13 @@ targetYPos = 0;
 velocity =  1.388;
 wheelBase = 2.6; 
 maxSteeringAngle = deg2rad(20);
-maxSteeringVelocity = 1+0.2;
+maxSteeringVelocity = 0.34;
 
 clc
 CPF = clothoidPathFinder(initXPos, initYPos, initHeading, initSteeringAngle,...
                 targetYPos, wheelBase, velocity, maxSteeringAngle, maxSteeringVelocity);
 
-CPF.pathTimeStepDivider = 15000;
+CPF.pathTimeStepDivider = 5000;
 CPF.isDrawDubins = 1;
 CPF.isDrawFirstNumerical = 1;
 CPF.isDrawArrows = 1;   

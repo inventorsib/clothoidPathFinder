@@ -98,18 +98,10 @@ classdef clothoidPathFinder
             
             control = obj.maxSteeringVelocity*control;
             obj.controlVector = control;
-            
-%             control(4) = -control(4);
-%             control(5) = -control(5);
+
+            obj.controlVector = control;
 
             if obj.isDrawFirstNumerical == 1
-                
-                % new idea 
-                times = [times(1) times(3) times(4)];
-                st = times;
-                t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
-                times = [st(1) t0 st(2) st(3) t0];
-                
                 obj.buildPathNumeracly(times, control,...
                     obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             end
@@ -126,21 +118,11 @@ classdef clothoidPathFinder
 
             %%
             
-            % new idea 
-            times = [times(1) times(3) times(4)];
-            
             for p = 100:10000:100000
                 obj.p_parameter = p;
                 times = fminunc(@obj.func, times, options);
-%                 times = fminsearch(@obj.func, times);
-%                   times = fmincon(@obj.func, times, [], [], [], [], [1 1 1]*10, [1 1 1]*20);
             end
 
-            % new idea 
-            st = times;
-            t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
-            times = [st(1) t0 st(2) st(3) t0];
-            
             [x_n, y_n, th_n, fi_n] = obj.buildPathNumeracly(times, control,...
                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(times, control,...
@@ -157,8 +139,7 @@ classdef clothoidPathFinder
             
             % new idea 
             st = switch_times;
-            t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
-            switch_times = [st(1) t0 st(2) st(3) t0];
+            switch_times = [st(1) t2 st]
             
             p = obj.p_parameter;
 
@@ -176,9 +157,8 @@ classdef clothoidPathFinder
             swtc = abs(min(0, switch_times));
 
             % TODO: задать и обосновать коэффициент
-            J = p*((y_a-y_target)^2 + abs(sin(th_a))^2 + 0*abs(rad2deg(fi_a))^2 ...
-                + 10*norm(swtc)*norm(swtc))...
-                + sum(abs(switch_times));
+            J = p*((y_a-y_target)^2 + abs(rad2deg(th_a))^2 + abs(rad2deg(fi_a))^2 + norm(swtc)*norm(swtc))...
+                +sum(abs(switch_times));
 
             
             global dy dth dfi
@@ -455,13 +435,13 @@ classdef clothoidPathFinder
                 end
 %               disp([x, y, th, fi]);
 
-% %               hold on;
-% %               plot(obj.t_arr, obj.fi_arr, 'LineWidth', 2); grid on; grid minor
-% %               plot(obj.t_arr, obj.pos_x, 'LineWidth', 2); grid on; grid minor
-% %               plot(obj.t_arr, obj.pos_y, 'LineWidth', 2); grid on; grid minor
-% %               plot(obj.t_arr, obj.th_arr, 'LineWidth', 2); grid on; grid minor
-% %               legend('fi','x', 'y', 'th')
-% %               hold off;
+%               hold on;
+%               plot(obj.t_arr, obj.fi_arr, 'LineWidth', 2); grid on; grid minor
+%               plot(obj.t_arr, obj.pos_x, 'LineWidth', 2); grid on; grid minor
+%               plot(obj.t_arr, obj.pos_y, 'LineWidth', 2); grid on; grid minor
+%               plot(obj.t_arr, obj.th_arr, 'LineWidth', 2); grid on; grid minor
+%               legend('fi','x', 'y', 'th')
+%               hold off;
         end
             
         function [x_new] = RK4SolveStep(obj, rightPart, x, h, u)

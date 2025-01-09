@@ -5,7 +5,7 @@
 initXPos = 0;
 initYPos = 22.8468;
 % global gFI
-initHeading = 2.6131; 
+initHeading = 2.6131 - 0.5; 
 initSteeringAngle = -0.0074; 
 targetYPos = 0; 
 

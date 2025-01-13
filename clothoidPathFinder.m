@@ -85,7 +85,7 @@ classdef clothoidPathFinder
         end
 
         %% Find path
-        function [x, y] = findPath(obj)
+        function [x, y, c] = findPath(obj)
         
             % TODO: убрать холд он и глобальные переменные
             % вернуть х, у - путь
@@ -116,7 +116,7 @@ classdef clothoidPathFinder
             
             %% Optimization part
 
-            options = optimoptions('fminunc', 'FiniteDifferenceStepSize', 0.00001, ...
+            options = optimoptions('fminunc', 'FiniteDifferenceStepSize', 0.01, ...
                 'FiniteDifferenceType', 'central', ...
                 'UseParallel', true);
             
@@ -128,14 +128,15 @@ classdef clothoidPathFinder
             
             % new idea 
             times = [times(1) times(3) times(4)];
-            
-            for p = 100:10000:100000
+            tic
+            for p = 10:1000:5000
                 obj.p_parameter = p;
-                times = fminunc(@obj.func, times, options);
-%                 times = fminsearch(@obj.func, times);
-%                   times = fmincon(@obj.func, times, [], [], [], [], [1 1 1]*10, [1 1 1]*20);
+%               times = fminunc(@obj.func, times);
+                times = fminsearch(@obj.func, times);
+%               times = fmincon(@obj.func, times, [], [], [], [], [1 1 1]*10, [1 1 1]*20);
             end
-
+            toc
+            
             % new idea 
             st = times;
             t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
@@ -146,9 +147,16 @@ classdef clothoidPathFinder
             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(times, control,...
                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             
+            if abs(y_a)>0.5
+                stp = 1;
+                disp('stop')
+            end
+            
             disp([x_a, y_a, th_a, fi_a]-[x_n, y_n, th_n, fi_n])
             
             x = obj.pos_x; y = obj.pos_y;
+            
+            c = control(1);
             
         end
 
@@ -176,7 +184,7 @@ classdef clothoidPathFinder
             swtc = abs(min(0, switch_times));
 
             % TODO: задать и обосновать коэффициент
-            J = p*((y_a-y_target)^2 + abs(sin(th_a))^2 + 0*abs(rad2deg(fi_a))^2 ...
+            J = p*(1*(y_a-y_target)^2 + 10*abs(sin(th_a))^2 + 0*abs(rad2deg(fi_a))^2 ...
                 + 10*norm(swtc)*norm(swtc))...
                 + sum(abs(switch_times));
 
@@ -220,7 +228,7 @@ classdef clothoidPathFinder
             th0 = obj.initHeading;
             fi0 = obj.initSteeringAngle;
             
-            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalytically(switch_times, obj.controlVector, ...
+            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(switch_times, obj.controlVector, ...
                 x0, y0, th0, fi0);
             
             J = J + y_a^2 + th_a^2 + fi_a^2;
@@ -298,6 +306,41 @@ classdef clothoidPathFinder
             
         end
         
+        function [x, y, th, fi] = buildPathAnalyticallyAuto(obj, duration_intervals, control_vector, x, y, th, fi)
+            
+            i = 1;
+            
+            for c = control_vector
+                current_switch_time = duration_intervals(i);
+                turn_sign = c;
+
+                if c~=0
+                    if i==2 || i==5
+                        current_switch_time = abs(fi)/obj.maxSteeringVelocity;
+                    end
+                    
+                    [x, y, th, fi, time_interval] = ...
+                    obj.getKlothoideTransition(x, y, th, fi, turn_sign, current_switch_time);
+                    
+                    if current_switch_time>time_interval
+                        residual_time_interval = current_switch_time-time_interval;
+                        [x, y, th, fi, not_used] = ...
+                        obj.getCircleTransition(x, y, th, fi, residual_time_interval);
+                    end
+                else
+                    if abs(fi)<deg2rad(0.05)
+                        [x, y, th, fi, not_used] = ...
+                        obj.getLineTransition(x, y, th, fi, current_switch_time);
+                    else
+                        [x, y, th, fi, not_used] = ...
+                        obj.getCircleTransition(x, y, th, fi, current_switch_time);
+                    end
+                end
+                i = i + 1;
+            end
+            
+        end
+        
         %% Transition evaluations
         function [x1, y1, th1, fi1, time_interval] = getLineTransition(obj, x0, y0, th0, fi0, time_interval)
 
@@ -346,16 +389,16 @@ classdef clothoidPathFinder
             th1 = th0 + v/l*fi0*time_interval + v/l*turn_sign*time_interval^2/2;
             
             % Polynom aproximation
-            x11 = x0 + obj.frmCos(time_interval, th0, fi0, turn_sign);
-            y11 = y0 + obj.frmSin(time_interval, th0, fi0, turn_sign);
+            x1 = x0 + obj.frmCos(time_interval, th0, fi0, turn_sign);
+            y1 = y0 + obj.frmSin(time_interval, th0, fi0, turn_sign);
             
             % Numerical solution
-            fCos = @(x) v*cos(th0+v/l*(fi0*x+turn_sign*x.^2/2));
-            fSin = @(x) v*sin(th0+v/l*(fi0*x+turn_sign*x.^2/2));
-
-            x1 = x0 + integral(fCos, 0, time_interval);
-            y1 = y0 + integral(fSin, 0, time_interval);
-%             
+%             fCos = @(x) v*cos(th0+v/l*(fi0*x+turn_sign*x.^2/2));
+%             fSin = @(x) v*sin(th0+v/l*(fi0*x+turn_sign*x.^2/2));
+% 
+%             x1 = x0 + integral(fCos, 0, time_interval);
+%             y1 = y0 + integral(fSin, 0, time_interval);
+             
         end
         
         %% Clothoid poly aproximation
@@ -568,16 +611,16 @@ classdef clothoidPathFinder
 
                 if  isequal(control, [-1 1 -1]) %RLR
                     T0 = abs((R-fi0)/w_max);
-                    u = [-1, 1, -1, 1];
-                    t = [T1+T0, T2+T_rl, T3+T_rl, T_s];
+                    u = [-1, 1, 1, -1, -1];
+                    t = [T1+T0, 0, T2+T_rl, T3+T_rl, T_s];
                     return;
                 end
 
 
                 if  isequal(control, [1 -1 1]) %LRL
                     T0 = abs((L-fi0)/w_max);
-                    u = [1, -1, 1, -1];
-                    t = [T1+T0, T2+T_rl, T3+T_rl, T_s];
+                    u = [1, -1, -1, 1, -1];
+                    t = [T1+T0, 0, T2+T_rl, T3+T_rl, T_s];
                     return;
                 end
 

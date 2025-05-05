@@ -3,16 +3,19 @@
 %
 %%
 initXPos = 0;
-initYPos =  rand*3*3.3536;%4.3086;
+initYPos =  0.5;
 global gFI
-initHeading =  2.1354*0 + pi*rand; %1.2217;
-initSteeringAngle =  0.0119*rand; %0.0057;
+initHeading = -0.2268928;
+initSteeringAngle =  -0.29999;
 targetYPos = 0; 
 
-velocity =  1.388;
+velocity =  2.6372; %1.388;
 wheelBase = 2.6; 
 maxSteeringAngle = deg2rad(20);
-maxSteeringVelocity = 0.34;
+maxSteeringVelocity = 0.34*0.5;
+
+global gStates;
+gStates = [];
 
 clc
 CPF = clothoidPathFinder(initXPos, initYPos, initHeading, initSteeringAngle,...

@@ -96,8 +96,28 @@ classdef clothoidPathFinder
             [times, control] = obj.getApproximationFromDubins(x1);
             [times, control] = obj.initFromTable(times, control);
             
-            control = -obj.maxSteeringVelocity*control;
+            control = obj.maxSteeringVelocity*control;
             obj.controlVector = control;
+            
+            
+            %% FIRST 
+            
+             if obj.isDrawFirstNumerical == 1
+                
+                % new idea 
+                times = [times(1) times(3) times(4)];
+                st = times;
+                t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
+                times = [st(1) t0 st(2) st(3) t0];
+                
+                obj.buildPathAnalyticallyAutoREC(times,  obj.controlVector,...
+                    obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+                
+                global gStates
+                plot(gStates(:,1), gStates(:,2), '.', "LineWidth", 2);
+                grid on; grid minor;
+            end
+            
             
             %% Optimization part
 
@@ -113,46 +133,79 @@ classdef clothoidPathFinder
             
             % new idea 
             times = [times(1) times(3) times(4)];
-            tic
-%             for p = 10:1000:5000
-                p=1;
-                obj.p_parameter = p;
-              times = fminunc(@obj.func, times);
-%                 times = fminsearch(@obj.func, times);
-%               times = fmincon(@obj.func, times, [], [], [], [], [1 1 1]*0, [1 1 1]*20);
-%             end
-            toc
+            dubins_times = times;
             
-% %             A = zeros(100);
-% %             B = zeros(100);
-% %             i = 1;
-% %             for t1=0:0.01:5
-% %                 j = 1;
-% %                 for t2 = 0:0.01:5
-% %                     times = [t1 0 0.0 t2 0];
-% %                     [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, control,...
-% %                     obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-% %                     A(i, j) = y_a;
-% %                     B(i, j) = th_a;
-% %                     
-% %                     if(abs(y_a)+abs(th_a)<0.1)
-% %                         disp([t1 t2])
-% %                     end
-% %                     j = j + 1;
-% %                 end
-% %                 i = i + 1;
-% %             end
+            
+            tic
+% %             for i = 1:1000
+% %                disp(i)
+% %                 
+% %                times = rand([1, 3])*10;
+% %                times(2) = 0;
+% %                
+% %                if i == 0
+% %                    times = dubins_times;
+% %                end
+% %                
+% %                c = 1;
+% %                if i > 0
+% %                 c = sign(randn);
+% %                end
+% %                obj.controlVector = c*obj.controlVector;
+% %                
+% %                for p=100
+% %                   
+% %                   obj.p_parameter = p; 
+% %                   st = fminunc(@obj.func, times);
+% %                   times = [st(1) 0 st(2) st(3) 0];
+% %                   
+% %                end
+% %                
+% %                [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
+% %                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
 % %             
-% %             clf
-% %             imshow(sign(A).*sign(B), [])
+% %                 if abs(y_a)+abs(sin(0.5*th_a))<0.01
+% %                     [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, obj.controlVector,...
+% %                     obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+% %                     break;
+% %                 end
+% %                % times = fminsearch(@obj.func, times);
+% %             end
+            toc
+            clf
+            A = zeros(100);
+            B = zeros(100);
+            i = 1;
+            for t1=0:0.1:10
+                j = 1;
+                for t2 = 0:0.1:10
+                    times = [t1 0 0.0 t2 0];
+                    [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, control,...
+                    obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+                    A(i, j) = y_a;
+                    B(i, j) = th_a;
+                    
+                    if(abs(y_a)+abs(th_a)<0.1)
+                        disp([t1 t2])
+                    end
+                    j = j + 1;
+                end
+                i = i + 1;
+            end
+            
+            clf
+%             imshow(sign(A).*sign(B), [])
+            surf(A, 'EdgeColor','none')
+            hold on
+            surf(B, 'EdgeColor','none')
             
             % new idea 
             st = times;
             t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
             times = [st(1) t0 st(2) st(3) t0];
             
-            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, control,...
-                obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+%             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, control,...
+%                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
             
              global gStates
              plot(gStates(:,1), gStates(:,2), '.', "LineWidth", 2);
@@ -162,7 +215,7 @@ classdef clothoidPathFinder
 
         %% \\
         function [J] = func(obj, switch_times)
-            
+            switch_times = abs(switch_times);
             % new idea 
             st = switch_times;
             t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
@@ -186,10 +239,11 @@ classdef clothoidPathFinder
             swtc = abs(min(0, switch_times));
 
             % TODO: задать и обосновать коэффициент
-            J = p*(1*(y_a-y_target)^2 + 10*abs(sin(th_a))^2)^1; % ...
-%                 + 10*norm(swtc)*norm(swtc)...
-%                 + sum(abs(switch_times)); 
-            disp([(y_a-y_target), 10*abs(sin(th_a))])
+            J = p*(1*(y_a-y_target)^2 + 10*abs(sin(th_a))^2)^0.5 ...
+                + 10*norm(swtc)*norm(swtc)...
+                + 10*sum(abs(switch_times)); 
+            
+%             disp([(y_a-y_target), 10*abs(sin(0.5*th_a))])
         end
         
        
@@ -304,18 +358,18 @@ classdef clothoidPathFinder
             
             global gStates;
             
-            h = 0.01;
+            h = 0.001;
             
             for c = control_vector
                 current_switch_time = duration_intervals(i);
                 turn_sign = c;
-                 xr = x; yr = y; thr = th; fir = fi; 
+                
                 if c~=0
                     if i==2 || i==5
                         current_switch_time = abs(fi)/obj.maxSteeringVelocity;
                     end
                     
-%                     xr = x; yr = y; thr = th; fir = fi; 
+                    xr = x; yr = y; thr = th; fir = fi; 
                     
                     [x, y, th, fi, time_interval] = ...
                     obj.getKlothoideTransition(x, y, th, fi, turn_sign, current_switch_time);
@@ -328,7 +382,7 @@ classdef clothoidPathFinder
                     
                     if current_switch_time>time_interval
                         
-%                         xr = x; yr = y; thr = th; fir = fi; 
+                        xr = x; yr = y; thr = th; fir = fi; 
                         
                         residual_time_interval = current_switch_time-time_interval;
                         [x, y, th, fi, not_used] = ...
@@ -342,7 +396,7 @@ classdef clothoidPathFinder
                     end
                 else
                     if abs(fi)<deg2rad(0.005)
-%                         xr = x; yr = y; thr = th; fir = fi; 
+                        xr = x; yr = y; thr = th; fir = fi; 
                         [x, y, th, fi, not_used] = ...
                         obj.getLineTransition(x, y, th, fi, current_switch_time);
                     
@@ -352,7 +406,7 @@ classdef clothoidPathFinder
                             gStates = [gStates; [xr, yr, thr, fir]];
                         end
                     else
-%                         xr = x; yr = y; thr = th; fir = fi; 
+                        xr = x; yr = y; thr = th; fir = fi; 
                         
                         [x, y, th, fi, not_used] = ...
                         obj.getCircleTransition(x, y, th, fi, current_switch_time);

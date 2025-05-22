@@ -26,6 +26,7 @@ classdef clothoidPathFinder
         pos_y
         fi_arr
         th_arr
+        PARAM
 
         u_arr
 
@@ -79,11 +80,34 @@ classdef clothoidPathFinder
             obj.x_dir_arr = [];
             obj.y_dir_arr = [];
             
+            
             % set to default parameters
             obj.pathTimeStepDivider = 1000;
             
         end
+        
+        
+        %% NEWTON
+        function [Y] = F(obj, X)
+            
+            times = [X(1) 0 0 X(2) 0];
+            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
+            obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+        
+            Y = [y_a, sin(0.5*th_a)];
+        end
 
+        
+        function [Y] = F1(obj, X)
+            
+            times = [X(1) 0 X(2) obj.PARAM 0];
+            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
+            obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+        
+            Y = [y_a, sin(0.5*th_a)];
+        end
+        
+        
         %% Find path
         function [x, y, c] = findPath(obj)
         
@@ -95,7 +119,7 @@ classdef clothoidPathFinder
             obj.xBestDubins = x1;
             [times, control] = obj.getApproximationFromDubins(x1);
             [times, control] = obj.initFromTable(times, control);
-            
+            times0 = times;
             control = obj.maxSteeringVelocity*control;
             obj.controlVector = control;
             
@@ -132,82 +156,124 @@ classdef clothoidPathFinder
             %%
             
             % new idea 
-            times = [times(1) times(3) times(4)];
-            dubins_times = times;
-            
-            
             tic
-% %             for i = 1:1000
-% %                disp(i)
-% %                 
-% %                times = rand([1, 3])*10;
-% %                times(2) = 0;
-% %                
-% %                if i == 0
-% %                    times = dubins_times;
-% %                end
-% %                
-% %                c = 1;
-% %                if i > 0
-% %                 c = sign(randn);
-% %                end
-% %                obj.controlVector = c*obj.controlVector;
-% %                
-% %                for p=100
-% %                   
-% %                   obj.p_parameter = p; 
-% %                   st = fminunc(@obj.func, times);
-% %                   times = [st(1) 0 st(2) st(3) 0];
-% %                   
-% %                end
-% %                
-% %                [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
-% %                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-% %             
-% %                 if abs(y_a)+abs(sin(0.5*th_a))<0.01
-% %                     [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, obj.controlVector,...
-% %                     obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-% %                     break;
-% %                 end
-% %                % times = fminsearch(@obj.func, times);
-% %             end
-            toc
-            clf
-            A = zeros(100);
-            B = zeros(100);
+            
+            times = [times(1) times(3) times(4)];
+            T1 = 0; T2 = 0;
+         
+            FLAG = 0;
+           
+            SZ = 100;
+            H = 1;
+            Ap = zeros(SZ/H);
+            Bp = zeros(SZ/H);
+            
+            Am = zeros(SZ/H);
+            Bm = zeros(SZ/H);
+            
+            MAIN_C = obj.controlVector;
+            Nbest = 1;
+            T1best = 100; T2best = 100;
+            
+            array_list = []; %sign t1 t2 
+            obj.PARAM = 0;
+            
             i = 1;
-            for t1=0:0.1:10
+            for t1 = 0:(H):SZ
                 j = 1;
-                for t2 = 0:0.1:10
-                    times = [t1 0 0.0 t2 0];
-                    [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, control,...
+                for t2 = 0:(H):SZ                
+
+                    obj.controlVector = MAIN_C;
+                    times = [t1 0 obj.PARAM t2 0];
+                    [x_a, y_a, th_a, fi_a, x1, y1, th1] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
                     obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-                    A(i, j) = y_a;
-                    B(i, j) = th_a;
                     
-                    if(abs(y_a)+abs(th_a)<0.1)
-                        disp([t1 t2])
+                    T_st = 0;
+                    if abs(sin(th1))>0.001
+                        T_st = y_a/sin(th1);
+                    else
+                        T_st = 10000;
+                    end
+                    
+                    Ap(i, j) = T_st;
+                    Bp(i, j) = sin(0.5*th_a);
+
+                    if i>2 && j>2
+                        if obj.check_signs(Ap(i-2:i, j-2:j)) && obj.check_signs(Bp(i-2:i, j-2:j))
+
+                            tpmA = Ap(i-2:i, j-2:j);
+                            tmpB = Bp(i-2:i, j-2:j);
+
+                            if ~(any(tpmA(:)==0) || any(tmpB(:)==0))               
+                                Ap(i, j) = 0;
+                                Bp(i, j) = 0;  
+                                array_list = [array_list; 1 t1 t2 t1+t2];
+                            end
+                        end
+                    end
+
+                    obj.controlVector = -MAIN_C;
+                    times = [t1 0 obj.PARAM t2 0];
+                    [x_a, y_a, th_a, fi_a, x1, y1, th1] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
+                    obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+                    Am(i, j) = y_a;
+                    Bm(i, j) = sin(0.5*th_a);
+
+                    
+                    if i>2 && j>2
+                        if obj.check_signs(Am(i-2:i, j-2:j)) && obj.check_signs(Bm(i-2:i, j-2:j))
+                            tpmA = Am(i-2:i, j-2:j);
+                            tmpB = Bm(i-2:i, j-2:j);
+                            if ~(any(tpmA(:)==0) || any(tmpB(:)==0))                    
+                                Am(i, j) = 0;
+                                Bm(i, j) = 0;  
+                                array_list = [array_list; -1 t1 t2 t1+t2];
+                            end
+                        end
                     end
                     j = j + 1;
                 end
                 i = i + 1;
             end
+
+            toc 
             
-            clf
+            
+            sorted_A = sortrows(array_list, 4);
+            Nbest =  sorted_A(1, 1);
+            T1best = sorted_A(1, 2);
+            T2best = sorted_A(1, 3);
+            
+            obj.controlVector = Nbest*MAIN_C;
+            
+            
+            
+            T1best = RES(1);
+            Tstr   = RES(2); 
+            T2best = obj.PARAM;
+            
+%             clf
+%             figure
 %             imshow(sign(A).*sign(B), [])
-            surf(A, 'EdgeColor','none')
-            hold on
-            surf(B, 'EdgeColor','none')
+%             
+%             figure
+%             surf(A, 'EdgeColor','none')
+%             hold on
+%             surf(B, 'EdgeColor','none')    
+%             
+%             figure
+%             surf((A.^2+10*B.^2).^0.1, 'EdgeColor','none')
             
             % new idea 
-            st = times;
-            t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
-            times = [st(1) t0 st(2) st(3) t0];
             
-%             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, control,...
-%                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-            
+            times = [T1best 0 Tstr T2best 0];
+            gStates = [];
+            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, obj.controlVector,...
+                obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+             
+%              figure
              global gStates
+             
              plot(gStates(:,1), gStates(:,2), '.', "LineWidth", 2);
              grid on; grid minor;
             
@@ -316,7 +382,7 @@ classdef clothoidPathFinder
             
         end
         
-        function [x, y, th, fi] = buildPathAnalyticallyAuto(obj, duration_intervals, control_vector, x, y, th, fi)
+        function [x, y, th, fi, xk1, yk1, thk1] = buildPathAnalyticallyAuto(obj, duration_intervals, control_vector, x, y, th, fi)
             duration_intervals = abs(duration_intervals);
             i = 1;
             
@@ -346,6 +412,11 @@ classdef clothoidPathFinder
                         obj.getCircleTransition(x, y, th, fi, current_switch_time);
                     end
                 end
+                
+                if i == 1
+                    xk1 = x; yk1 = y; thk1 = th;
+                end
+                
                 i = i + 1;
             end
             
@@ -358,7 +429,7 @@ classdef clothoidPathFinder
             
             global gStates;
             
-            h = 0.001;
+            h = 0.05;
             
             for c = control_vector
                 current_switch_time = duration_intervals(i);
@@ -369,7 +440,7 @@ classdef clothoidPathFinder
                         current_switch_time = abs(fi)/obj.maxSteeringVelocity;
                     end
                     
-                    xr = x; yr = y; thr = th; fir = fi; 
+                    xr = x; yr = y; thr = th; fir = fi;
                     
                     [x, y, th, fi, time_interval] = ...
                     obj.getKlothoideTransition(x, y, th, fi, turn_sign, current_switch_time);
@@ -606,7 +677,69 @@ classdef clothoidPathFinder
 
         end
 
+        
+        %% Utils
+        function has_diff_signs = check_signs(obj, matrix)
+            % Проверка наличия положительных и отрицательных элементов
+            has_positive = any(matrix(:) > 0);
+            has_negative = any(matrix(:) < 0);
 
+            % Если есть и положительные, и отрицательные элементы -> true
+            has_diff_signs = has_positive && has_negative;
+        end
+
+     
     end
+    
+    methods (Static)
+             function y = fast_sin(x)
+                % Приведение угла к диапазону [0, 2π)
+                x = mod(x, 2*pi);
+
+                % Определение знака и приведение к диапазону [0, π]
+                sign = 1;
+                if x > pi
+                    x = x - pi;
+                    sign = -1;
+                end
+
+                % Приведение к диапазону [0, π/2]
+                if x > pi/2
+                    x = pi - x;
+                end
+
+                % Аппроксимация рядом Тейлора (схема Горнера)
+                x2 = x .* x;
+                y = x .* (1 - x2/6 .* (1 - x2/20 .* (1 - x2/42)));
+
+                % Учет знака
+                y = sign .* y;
+            end
+
+            function y = fast_cos(x)
+                % Приведение угла к диапазону [0, 2π)
+                x = mod(x, 2*pi);
+
+                % Определение знака и приведение к диапазону [0, π]
+                sign = 1;
+                if x > pi
+                    x = 2*pi - x;
+                    sign = -1;
+                end
+
+                % Приведение к диапазону [0, π/2] и корректировка знака
+                if x > pi/2
+                    x = pi - x;
+                    sign = -sign;
+                end
+
+                % Аппроксимация рядом Тейлора (схема Горнера)
+                x2 = x .* x;
+                y = 1 - x2/2 .* (1 - x2/12 .* (1 - x2/30));
+
+                % Учет знака
+                y = sign .* y;
+            end
+        end
 end
 

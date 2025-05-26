@@ -99,17 +99,17 @@ classdef clothoidPathFinder
 
         
         function [Y] = F1(obj, X)
-            
-            times = [X(1) 0 X(2) obj.PARAM 0];
+            % 2, 5 -auto
+            times = [obj.PARAM 0 X(1) X(2) 0];
             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
             obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-        
+            
             Y = [y_a, sin(0.5*th_a)];
         end
         
         
         %% Find path
-        function [x, y, c] = findPath(obj)
+        function [ret_x, ret_y, ret_th, ret_fi] = findPath(obj)
         
             % TODO: убрать холд он и глобальные переменные
             % вернуть х, у - путь
@@ -163,8 +163,8 @@ classdef clothoidPathFinder
          
             FLAG = 0;
            
-            SZ = 100;
-            H = 1;
+            SZ = 200;
+            H = 0.5;
             Ap = zeros(SZ/H);
             Bp = zeros(SZ/H);
             
@@ -173,7 +173,7 @@ classdef clothoidPathFinder
             
             MAIN_C = obj.controlVector;
             Nbest = 1;
-            T1best = 100; T2best = 100;
+            T1best = 200; T2best = 200;
             
             array_list = []; %sign t1 t2 
             obj.PARAM = 0;
@@ -182,101 +182,140 @@ classdef clothoidPathFinder
             for t1 = 0:(H):SZ
                 j = 1;
                 for t2 = 0:(H):SZ                
+                    
+%                     if norm([t1 t2])>SZ
+%                         break;
+%                     end
 
                     obj.controlVector = MAIN_C;
-                    times = [t1 0 obj.PARAM t2 0];
+                    times = [t1 0 0 t2 0];
                     [x_a, y_a, th_a, fi_a, x1, y1, th1] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
                     obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
                     
-                    T_st = 0;
-                    if abs(sin(th1))>0.001
-                        T_st = y_a/sin(th1);
-                    else
-                        T_st = 10000;
-                    end
-                    
-                    Ap(i, j) = T_st;
                     Bp(i, j) = sin(0.5*th_a);
 
                     if i>2 && j>2
-                        if obj.check_signs(Ap(i-2:i, j-2:j)) && obj.check_signs(Bp(i-2:i, j-2:j))
+                        if obj.check_signs(Bp(i-2:i, j-2:j))
 
-                            tpmA = Ap(i-2:i, j-2:j);
-                            tmpB = Bp(i-2:i, j-2:j);
+                           tmpB = Bp(i-2:i, j-2:j);
 
-                            if ~(any(tpmA(:)==0) || any(tmpB(:)==0))               
-                                Ap(i, j) = 0;
-                                Bp(i, j) = 0;  
-                                array_list = [array_list; 1 t1 t2 t1+t2];
-                            end
+                           T_st = 0;
+                           if abs(sin(th1))>0.1
+                               T_st = -y_a/(obj.velocity*sin(th1));
+                           else
+                               T_st = 10000;
+                           end
+
+                           if ~(any(tmpB(:)==0)) && T_st >= 0 && T_st<100
+                               Ap(i, j) = T_st;
+                               Bp(i, j) = 0;  
+                               array_list = [array_list; 1 t1 t2 T_st t1+t2+T_st];
+                           end
                         end
-                    end
+                     end
 
+                    %% OTHER CASE
                     obj.controlVector = -MAIN_C;
-                    times = [t1 0 obj.PARAM t2 0];
+                    times = [t1 0 0 t2 0];
                     [x_a, y_a, th_a, fi_a, x1, y1, th1] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
                     obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-                    Am(i, j) = y_a;
+                    
                     Bm(i, j) = sin(0.5*th_a);
 
-                    
                     if i>2 && j>2
-                        if obj.check_signs(Am(i-2:i, j-2:j)) && obj.check_signs(Bm(i-2:i, j-2:j))
-                            tpmA = Am(i-2:i, j-2:j);
-                            tmpB = Bm(i-2:i, j-2:j);
-                            if ~(any(tpmA(:)==0) || any(tmpB(:)==0))                    
-                                Am(i, j) = 0;
-                                Bm(i, j) = 0;  
-                                array_list = [array_list; -1 t1 t2 t1+t2];
-                            end
+                        if obj.check_signs(Bm(i-2:i, j-2:j))
+
+                           tmpB = Bm(i-2:i, j-2:j);
+
+                           T_st = 0;
+                           if abs(sin(th1))>0.1
+                               T_st = -y_a/(obj.velocity*sin(th1));
+                           else
+                               T_st = 10000;
+                           end
+
+                           if ~(any(tmpB(:)==0)) && T_st >= 0 && T_st<100
+                               Am(i, j) = T_st;
+                               Bm(i, j) = 0;  
+                               array_list = [array_list; 1 t1 t2 T_st t1+t2+T_st];
+                           end
                         end
-                    end
+                     end
+
                     j = j + 1;
                 end
                 i = i + 1;
             end
 
-            toc 
-            
-            
-            sorted_A = sortrows(array_list, 4);
-            Nbest =  sorted_A(1, 1);
-            T1best = sorted_A(1, 2);
-            T2best = sorted_A(1, 3);
-            
-            obj.controlVector = Nbest*MAIN_C;
-            
-            
-            
-            T1best = RES(1);
-            Tstr   = RES(2); 
-            T2best = obj.PARAM;
-            
-%             clf
-%             figure
-%             imshow(sign(A).*sign(B), [])
-%             
-%             figure
-%             surf(A, 'EdgeColor','none')
-%             hold on
-%             surf(B, 'EdgeColor','none')    
-%             
-%             figure
-%             surf((A.^2+10*B.^2).^0.1, 'EdgeColor','none')
-            
+           
+            if isempty(array_list)
+                check  =  1;
+            end
+            sorted_A = sortrows(array_list, 5);
+           
+           filtered_points = sorted_A(1, :);
+           min_dist = 5;
+           for i=2:size(sorted_A, 1)
+           
+                distances = sqrt(sum((sorted_A(i, 2:4) - filtered_points(:, 2:4)).^2, 2)); 
+                if all(distances >= min_dist) 
+                    filtered_points = [filtered_points; sorted_A(i, :)];
+                end
+           end
+
+           Nbest =  sorted_A(1, 1);
+           T1best = sorted_A(1, 2);
+           T2best = sorted_A(1, 3);
+           Tstbest = sorted_A(1, 4);
+                
+            for i=0:(length(sorted_A(:, 1))-1)
+                Nbest =  sorted_A(1+i, 1);
+                T1best = sorted_A(1+i, 2);
+                T2best = sorted_A(1+i, 3);
+                Tstbest= sorted_A(1+i, 4);
+                
+                obj.controlVector = Nbest*MAIN_C;
+                obj.PARAM = T1best; %fix T1
+                [RES, fval] = fsolve(@obj.F1, [Tstbest T2best]);
+                
+                if norm(fval)<0.1
+                    break;
+                else
+                    kmjomk = 1;
+                end
+            end
             % new idea 
-            
-            times = [T1best 0 Tstr T2best 0];
+            T1best = obj.PARAM;
+            Tstbest = RES(1);
+            T2best = RES(2);
+            times = [T1best 0 Tstbest T2best 0];
             gStates = [];
-            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, obj.controlVector,...
-                obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-             
-%              figure
-             global gStates
-             
-             plot(gStates(:,1), gStates(:,2), '.', "LineWidth", 2);
-             grid on; grid minor;
-            
+
+
+            [x_a, y_a, th_a, fi_a, x1, y1, th1] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
+            obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+
+            if norm( [y_a, sin(0.5*th_a), fi_a*0])>0.1
+               fjkdigv = 1;
+            end
+            %% fi_a - bad 0.34((
+
+
+%             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, obj.controlVector,...
+%                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+
+%% figure
+%              global gStates
+%              
+%              plot(gStates(:,1), gStates(:,2), '.', "LineWidth", 2);
+%              grid on; grid minor;
+
+             ret_x = x_a;
+             ret_y = y_a;
+             ret_th = th_a;
+             ret_fi = fi_a;
+
+             toc
         end
 
         %% \\
@@ -393,6 +432,9 @@ classdef clothoidPathFinder
                 if c~=0
                     if i==2 || i==5
                         current_switch_time = abs(fi)/obj.maxSteeringVelocity;
+                        if i == 5
+%                             turn_sign = sign(fi)*abs(turn_sign);
+                        end
                     end
                     
                     [x, y, th, fi, time_interval] = ...
@@ -413,7 +455,7 @@ classdef clothoidPathFinder
                     end
                 end
                 
-                if i == 1
+                if i == 2
                     xk1 = x; yk1 = y; thk1 = th;
                 end
                 
@@ -438,6 +480,9 @@ classdef clothoidPathFinder
                 if c~=0
                     if i==2 || i==5
                         current_switch_time = abs(fi)/obj.maxSteeringVelocity;
+                        if i == 5
+%                             turn_sign = sign(fi)*abs(turn_sign);
+                        end
                     end
                     
                     xr = x; yr = y; thr = th; fir = fi;

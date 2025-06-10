@@ -81,25 +81,14 @@ classdef clothoidPathFinder
             obj.y_dir_arr = [];
             
             
-            % set to default parameters
-            obj.pathTimeStepDivider = 1000;
-            
         end
         
         
         %% NEWTON
-        function [Y] = F(obj, X)
-            
-            times = [X(1) 0 0 X(2) 0];
-            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
-            obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-        
-            Y = [y_a, sin(0.5*th_a)];
-        end
-
-        
-        function [Y] = F1(obj, X)
+      
+        function [Y] = funcOfResiduals(obj, X)
             % 2, 5 -auto
+            X = abs(X);
             times = [obj.PARAM 0 X(1) X(2) 0];
             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
             obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
@@ -111,137 +100,106 @@ classdef clothoidPathFinder
         %% Find path
         function [ret_x, ret_y, ret_th, ret_fi] = findPath(obj)
         
-            % TODO: убрать холд он и глобальные переменные
-            % вернуть х, у - путь
-            hold on
+            control0 = [1, -1, 0, -1, 1]; % initial signs of turns
+            times = [0, 0, 0, 0, 0];
             
-            x1 = obj.getBestDubins2Line(obj.initXPos);
-            obj.xBestDubins = x1;
-            [times, control] = obj.getApproximationFromDubins(x1);
-            [times, control] = obj.initFromTable(times, control);
-            times0 = times;
-            control = obj.maxSteeringVelocity*control;
+            control = obj.maxSteeringVelocity*control0;
             obj.controlVector = control;
             
             
-            %% FIRST 
-            
-             if obj.isDrawFirstNumerical == 1
-                
-                % new idea 
-                times = [times(1) times(3) times(4)];
-                st = times;
-                t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
-                times = [st(1) t0 st(2) st(3) t0];
-                
-                obj.buildPathAnalyticallyAutoREC(times,  obj.controlVector,...
-                    obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-                
-                global gStates
-                plot(gStates(:,1), gStates(:,2), '.', "LineWidth", 2);
-                grid on; grid minor;
-            end
-            
-            
-            %% Optimization part
-
-            options = optimoptions('fminunc', 'FiniteDifferenceStepSize', 0.01, ...
-                'FiniteDifferenceType', 'central', ...
-                'UseParallel', true);
-            
-            global DY DTH DFI
-            DY = []; DTH = []; DFI = [];
-
-
-            %%
-            
-            % new idea 
+            %% 
             tic
-            
-            times = [times(1) times(3) times(4)];
-            T1 = 0; T2 = 0;
-         
-            FLAG = 0;
            
-            SZ = 200;
-            H = 0.5;
+            SZ = 15; % max T1 and T2
+            H = 0.125;  % step for T1 and T2
+            
             Ap = zeros(SZ/H);
             Bp = zeros(SZ/H);
             
-            Am = zeros(SZ/H);
-            Bm = zeros(SZ/H);
+            T1 = zeros(SZ/H);
+            T2 = zeros(SZ/H);
             
-            MAIN_C = obj.controlVector;
-            Nbest = 1;
-            T1best = 200; T2best = 200;
-            
+            controls = [
+                         [1, -1, 0, -1, 1];
+                           [-1, 1, 0, -1, 1];
+                       [-1, 1, 1, -1, -1];
+                       [1, -1, -1, 1, -1];
+                         [-1, 1, 0, 1, -1];
+                         [1,-1, 0, 1, -1]
+                       ];
+            controls = controls'*obj.maxSteeringVelocity;
+
             array_list = []; %sign t1 t2 
             obj.PARAM = 0;
             
             i = 1;
             for t1 = 0:(H):SZ
                 j = 1;
+                for t2 = 0:(H):SZ   
+                   T1(i, j) = t1;   
+                   T2(i, j) = t2;
+                   j = j + 1;
+                end
+                i = i + 1;
+            end
+            
+            
+            i = 1;
+            for t1 = 0:(H):SZ
+                j = 1;
                 for t2 = 0:(H):SZ                
-                    
-%                     if norm([t1 t2])>SZ
-%                         break;
-%                     end
 
-                    obj.controlVector = MAIN_C;
-                    times = [t1 0 0 t2 0];
-                    [x_a, y_a, th_a, fi_a, x1, y1, th1] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
-                    obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-                    
-                    Bp(i, j) = sin(0.5*th_a);
+                    for c = controls
+                        
+                        obj.controlVector = c';
+                        times = [t1 0 0 t2 0];
+                        
+                        [x_a, y_a, th_a, fi_a, x1, y1, th1, ta2, ta5] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
+                        obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
 
-                    if i>2 && j>2
-                        if obj.check_signs(Bp(i-2:i, j-2:j))
+                        Bp(i, j) = sin(0.5*th_a);
 
-                           tmpB = Bp(i-2:i, j-2:j);
+                        if i>2 && j>2
+                            if obj.check_signs(Bp(i-1:i, j-1:j))
 
-                           T_st = 0;
-                           if abs(sin(th1))>0.1
-                               T_st = -y_a/(obj.velocity*sin(th1));
-                           else
-                               T_st = 10000;
-                           end
+                               tmpB = Bp(i-1:i, j-1:j);
+                               tmpT1 = T1(i-1:i, j-1:j);
+                               tmpT2 = T2(i-1:i, j-1:j);
+                               
+                               tmpB = reshape(tmpB, 1, 4);
+                               tmpT1 = reshape(tmpT1, 1, 4);
+                               tmpT2 = reshape(tmpT2, 1, 4);
+                               
+                               intersection_point = ...
+                                   obj.plane_intersection_z0([tmpT1(2); tmpT2(2); tmpB(2)], ...
+                                   [tmpT1(3); tmpT2(3); tmpB(3)],...
+                                   [tmpT1(4); tmpT2(4); tmpB(4)]);
+                               
+                               t1_apr = intersection_point(1);
+                               t2_apr = intersection_point(2);
+                               times = [t1_apr 0 0 t2_apr 0];
+                               
+                               [x_a, y_a, th_a, fi_a, x1, y1, th1, ta2, ta5] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
+                                obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+                               
+                               T_st = 0;
+                               if abs(sin(th1))>0.0001
+                                   T_st = -y_a/(obj.velocity*sin(th1));
+                               else
+                                   T_st = Inf;
+                               end
 
-                           if ~(any(tmpB(:)==0)) && T_st >= 0 && T_st<100
-                               Ap(i, j) = T_st;
-                               Bp(i, j) = 0;  
-                               array_list = [array_list; 1 t1 t2 T_st t1+t2+T_st];
-                           end
+                               if  T_st >= 0 && T_st<100 && ~(any(tmpB(:)==0))
+                                   Ap(i, j) = T_st;
+                                   Bp(i, j) = 0;  
+                                   array_list = [array_list;
+                                       obj.controlVector t1_apr t2_apr T_st ta2 ta5 t1+t2+T_st+ta2+ta5];
+                               end
+                            end
                         end
-                     end
-
-                    %% OTHER CASE
-                    obj.controlVector = -MAIN_C;
-                    times = [t1 0 0 t2 0];
-                    [x_a, y_a, th_a, fi_a, x1, y1, th1] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
-                    obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+                        
+                    end
                     
-                    Bm(i, j) = sin(0.5*th_a);
-
-                    if i>2 && j>2
-                        if obj.check_signs(Bm(i-2:i, j-2:j))
-
-                           tmpB = Bm(i-2:i, j-2:j);
-
-                           T_st = 0;
-                           if abs(sin(th1))>0.1
-                               T_st = -y_a/(obj.velocity*sin(th1));
-                           else
-                               T_st = 10000;
-                           end
-
-                           if ~(any(tmpB(:)==0)) && T_st >= 0 && T_st<100
-                               Am(i, j) = T_st;
-                               Bm(i, j) = 0;  
-                               array_list = [array_list; 1 t1 t2 T_st t1+t2+T_st];
-                           end
-                        end
-                     end
-
                     j = j + 1;
                 end
                 i = i + 1;
@@ -249,67 +207,75 @@ classdef clothoidPathFinder
 
            
             if isempty(array_list)
-                check  =  1;
+                error("Empty list of points");
             end
-            sorted_A = sortrows(array_list, 5);
+            
+            % Sort by total time
+            sorted_list = sortrows(array_list, 11);
            
-           filtered_points = sorted_A(1, :);
-           min_dist = 5;
-           for i=2:size(sorted_A, 1)
-           
-                distances = sqrt(sum((sorted_A(i, 2:4) - filtered_points(:, 2:4)).^2, 2)); 
-                if all(distances >= min_dist) 
-                    filtered_points = [filtered_points; sorted_A(i, :)];
-                end
-           end
+            % merge close points
+            filtered_points = sorted_list;
+%             filtered_points = sorted_list(1, :);
+%             min_dist = 0.001;
+%             for i=2:size(sorted_list, 1)
+%                 distances = sqrt(sum((sorted_list(i, 6:7) - filtered_points(:, 6:7)).^2, 2)); 
+%                 if all(distances >= min_dist) 
+%                     filtered_points = [filtered_points; sorted_list(i, :)];
+%                 end
+%             end
 
-           Nbest =  sorted_A(1, 1);
-           T1best = sorted_A(1, 2);
-           T2best = sorted_A(1, 3);
-           Tstbest = sorted_A(1, 4);
+           ControlBest =  filtered_points(1, 1:5); 
+           T1best  = filtered_points(1, 6);
+           T2best  = filtered_points(1, 7);
+           Tstbest = filtered_points(1, 8);
                 
-            for i=0:(length(sorted_A(:, 1))-1)
-                Nbest =  sorted_A(1+i, 1);
-                T1best = sorted_A(1+i, 2);
-                T2best = sorted_A(1+i, 3);
-                Tstbest= sorted_A(1+i, 4);
+            for i=0:(length(filtered_points(:, 1))-1)
+                ControlBest =  filtered_points(1+i, 1:5);
+                T1best = filtered_points(1+i, 6);
+                T2best = filtered_points(1+i, 7);
+                Tstbest= filtered_points(1+i, 8);
                 
-                obj.controlVector = Nbest*MAIN_C;
-                obj.PARAM = T1best; %fix T1
-                [RES, fval] = fsolve(@obj.F1, [Tstbest T2best]);
+                obj.controlVector = ControlBest;
+                obj.PARAM = T1best; %T1 is fixed
+                [RES, fval] = fsolve(@obj.funcOfResiduals, [Tstbest T2best]);
                 
-                if norm(fval)<0.1
+                if norm(fval)<0.01
                     break;
                 else
-                    kmjomk = 1;
+                    disp("Bad fsolve result")
                 end
             end
-            % new idea 
+            
+            % 
             T1best = obj.PARAM;
             Tstbest = RES(1);
             T2best = RES(2);
-            times = [T1best 0 Tstbest T2best 0];
+            times = [T1best 0 Tstbest T2best 0]; %% вернуть время 
+            
+            global gStates
             gStates = [];
-
 
             [x_a, y_a, th_a, fi_a, x1, y1, th1] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
             obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
 
-            if norm( [y_a, sin(0.5*th_a), fi_a*0])>0.1
-               fjkdigv = 1;
+            if norm( [y_a, sin(0.5*th_a), fi_a])>0.1
+               disp("Bad final residuals")
             end
+            
             %% fi_a - bad 0.34((
 
+            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, obj.controlVector,...
+             obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
 
-%             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, obj.controlVector,...
-%                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
+            %% figure
+             global gStates
+                         
+             
+             plot(gStates(:,1), gStates(:,2), '.', "LineWidth", 2);
+             grid on; grid minor;
+             axis equal
 
-%% figure
-%              global gStates
-%              
-%              plot(gStates(:,1), gStates(:,2), '.', "LineWidth", 2);
-%              grid on; grid minor;
-
+             %% return final 
              ret_x = x_a;
              ret_y = y_a;
              ret_th = th_a;
@@ -318,38 +284,6 @@ classdef clothoidPathFinder
              toc
         end
 
-        %% \\
-        function [J] = func(obj, switch_times)
-            switch_times = abs(switch_times);
-            % new idea 
-            st = switch_times;
-            t0 = abs(obj.maxSteeringAngle/obj.maxSteeringVelocity);
-            switch_times = [st(1) t0 st(2) st(3) t0];
-            
-            p = obj.p_parameter;
-
-            x0 = obj.initXPos;
-            y0 = obj.initYPos;
-            th0 = obj.initHeading;
-            fi0 = obj.initSteeringAngle;
-            
-           
-            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(...
-                switch_times,...
-                obj.controlVector, ...
-                x0, y0, th0, fi0);
-            
-            y_target = obj.targetYPos;
-
-            swtc = abs(min(0, switch_times));
-
-            % TODO: задать и обосновать коэффициент
-            J = p*(1*(y_a-y_target)^2 + 10*abs(sin(th_a))^2)^0.5 ...
-                + 10*norm(swtc)*norm(swtc)...
-                + 10*sum(abs(switch_times)); 
-            
-%             disp([(y_a-y_target), 10*abs(sin(0.5*th_a))])
-        end
         
        
         %% Get best Dubins path to line
@@ -421,7 +355,7 @@ classdef clothoidPathFinder
             
         end
         
-        function [x, y, th, fi, xk1, yk1, thk1] = buildPathAnalyticallyAuto(obj, duration_intervals, control_vector, x, y, th, fi)
+        function [x, y, th, fi, xk1, yk1, thk1, ta2, ta5] = buildPathAnalyticallyAuto(obj, duration_intervals, control_vector, x, y, th, fi)
             duration_intervals = abs(duration_intervals);
             i = 1;
             
@@ -432,8 +366,15 @@ classdef clothoidPathFinder
                 if c~=0
                     if i==2 || i==5
                         current_switch_time = abs(fi)/obj.maxSteeringVelocity;
-                        if i == 5
-%                             turn_sign = sign(fi)*abs(turn_sign);
+                        if i == 5 || i == 2
+                            turn_sign = -sign(fi)*abs(turn_sign);
+                        end
+                        
+                        if i==2
+                            ta2 = current_switch_time;
+                        end
+                        if i==5
+                            ta5 = current_switch_time;
                         end
                     end
                     
@@ -480,8 +421,8 @@ classdef clothoidPathFinder
                 if c~=0
                     if i==2 || i==5
                         current_switch_time = abs(fi)/obj.maxSteeringVelocity;
-                        if i == 5
-%                             turn_sign = sign(fi)*abs(turn_sign);
+                        if i == 5 || i == 2
+                            turn_sign = -sign(fi)*abs(turn_sign);
                         end
                     end
                     
@@ -588,13 +529,6 @@ classdef clothoidPathFinder
             % Polynom aproximation
             x1 = x0 + obj.frmCos(time_interval, th0, fi0, turn_sign);
             y1 = y0 + obj.frmSin(time_interval, th0, fi0, turn_sign);
-            
-            % Numerical solution
-%             fCos = @(x) v*cos(th0+v/l*(fi0*x+turn_sign*x.^2/2));
-%             fSin = @(x) v*sin(th0+v/l*(fi0*x+turn_sign*x.^2/2));
-% 
-%             x1 = x0 + integral(fCos, 0, time_interval);
-%             y1 = y0 + integral(fSin, 0, time_interval);
              
         end
         
@@ -624,105 +558,6 @@ classdef clothoidPathFinder
         end
         
         
-        %% Get initial control approximation from Dubins
-        function [t,u] = initFromTable(obj, times, control)
-
-            w_max = obj.maxSteeringVelocity;
-            fi0 = obj.initSteeringAngle;
-            
-            L = obj.maxSteeringAngle;
-            R = -obj.maxSteeringAngle;
-            S = 0;
-
-            T1 = times(1);
-            T2 = times(2);
-            T3 = times(3);
-
-            T_s = abs((R-S)/obj.maxSteeringVelocity);
-            T_rl = abs((R-L)/obj.maxSteeringVelocity);
-
-
-                if  isequal(control, [1 0 -1]) %LSR
-                    disp("LSR")
-                    T0 = abs((L-fi0)/w_max);
-                    u = [1, -1, 0, -1, 1];
-                    t = [T1+T0, T_s, T2, T_s+T3, T_s];
-                    return;
-                end
-
-                if  isequal(control, [-1 0 -1]) %RSR
-                    disp("RSR")
-                    T0 = abs((R-fi0)/w_max);
-                    u = [-1, 1, 0, -1, 1];
-                    t = [T1+T0, T_s, T2, T_s+T3, T_s];
-                    return;
-                end
-
-                if  isequal(control, [-1 1 -1]) %RLR
-                    disp("RLR")
-                    T0 = abs((R-fi0)/w_max);
-                    u = [-1, 1, 1, -1, -1];
-                    t = [T1+T0, T_s, T2+T_rl, T3+T_rl, T_s];
-                    return;
-                end
-
-
-                if  isequal(control, [1 -1 1]) %LRL
-                    disp("LRL")
-                    T0 = abs((L-fi0)/w_max);
-                    u = [1, -1, -1, 1, -1];
-                    t = [T1+T0, T_s, T2+T_rl, T3+T_rl, T_s];
-                    return;
-                end
-
-                if  isequal(control, [-1 0 1]) %RSL
-                    disp("RSL")
-                    T0 = abs((R-fi0)/w_max);
-                    u = [-1, 1, 0, 1, -1];
-                    t = [T1+T0, T_s, T2, T_s+T3, T_s];
-                    return;
-                end
-
-                if  isequal(control, [1 0 1]) %LSL
-                    disp("LSL")
-                    T0 = abs((R-fi0)/w_max);
-                    u = [1,-1, 0, 1, -1];
-                    t = [T1+T0, T_s, T2, T_s+T3, T_s];
-                    return;
-                end
-        end
-        
-        function [times, control] = getApproximationFromDubins(obj, x1)
-
-            dubConnObj = dubinsConnection;
-            dubConnObj.MinTurningRadius = obj.wheelBase/obj.maxSteeringAngle;
-            startPose = [obj.initXPos obj.initYPos obj.initHeading];
-            goalPose = [x1 obj.targetYPos 0];
-            [pathSegObj, pathCosts] = connect(dubConnObj,startPose,goalPose);
-            
-            if obj.isDrawDubins == 1
-                show(pathSegObj{1})
-            end
-            
-            control = [];
-            
-            for type=pathSegObj{1}.MotionTypes
-                if type{1} == 'L'
-                    control = [control 1];
-                end
-                if type{1} == 'S'
-                    control = [control 0];
-                end
-                if type{1} == 'R'
-                    control = [control -1];    
-                end
-            end
-
-            times = pathSegObj{1}.MotionLengths/obj.velocity;
-
-        end
-
-        
         %% Utils
         function has_diff_signs = check_signs(obj, matrix)
             % Проверка наличия положительных и отрицательных элементов
@@ -733,7 +568,55 @@ classdef clothoidPathFinder
             has_diff_signs = has_positive && has_negative;
         end
 
-     
+        function intersection_point = plane_intersection_z0(obj, P1, P2, P3)
+            % Проверяем размерности входных данных
+            P1 = P1(:)'; % Преобразуем в строку [x1, y1, z1]
+            P2 = P2(:)';
+            P3 = P3(:)';
+
+            % Находим самую нижнюю точку (с минимальным z)
+            points = [P1; P2; P3];
+            [~, min_idx] = min(points(:, 3));
+            min_z_point = points(min_idx, :);
+
+            % Вычисляем два вектора в плоскости
+            v1 = P2 - P1;
+            v2 = P3 - P1;
+
+            % Вычисляем нормаль к плоскости
+            n = cross(v1, v2);
+
+            % Проверяем, что векторы не коллинеарны
+            if norm(n) < 1e-10
+                error('Точки коллинеарны. Плоскость не определена.');
+            end
+
+            % Проверяем, горизонтальна ли плоскость (нормаль параллельна оси Z)
+            if abs(n(1)) < 1e-10 && abs(n(2)) < 1e-10
+                % Плоскость горизонтальна
+                if abs(min_z_point(3)) < 1e-10
+                    % Плоскость проходит через z=0
+                    intersection_point = [min_z_point(1), min_z_point(2), 0];
+                else
+                    % Плоскость не пересекает z=0
+                    intersection_point = [NaN, NaN, NaN];
+                end
+                return;
+            end
+
+            % Вычисляем d для уравнения плоскости: n_x*x + n_y*y + n_z*z = d
+            d = dot(n, P1);
+
+            % Уравнение линии пересечения при z=0: n_x*x + n_y*y = d
+            % Проекция точки (x0, y0) на эту линию в 2D
+            x0 = min_z_point(1);
+            y0 = min_z_point(2);
+            t = (n(1)*x0 + n(2)*y0 - d) / (n(1)^2 + n(2)^2);
+            x_proj = x0 - t * n(1);
+            y_proj = y0 - t * n(2);
+
+            intersection_point = [x_proj, y_proj, 0];
+        end
     end
     
     methods (Static)

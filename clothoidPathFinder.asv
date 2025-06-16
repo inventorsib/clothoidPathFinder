@@ -110,8 +110,8 @@ classdef clothoidPathFinder
             %% 
             tic
            
-            SZ = 20; % max T1 and T2
-            H = 0.1;  % step for T1 and T2
+            SZ = 15; % max T1 and T2
+            H = 0.125;  % step for T1 and T2
             
             Ap = zeros(SZ/H);
             Bp = zeros(SZ/H);
@@ -144,14 +144,7 @@ classdef clothoidPathFinder
             end
             
             Tsum = T1+T2;
-            
-%             T1 = 0.1*T1.^2;
-%             T2 = 0.1*T2.^2;
-            
             [m, n] = size(Tsum);
-            RES = [];
-            
-            breakFlag = 0;
             
             for s = 2:(m + n)
                 i_min = max(1, s - n);
@@ -205,7 +198,7 @@ classdef clothoidPathFinder
                                    T_st = Inf;
                                end
 
-                               if  T_st >= 0 && T_st<15 && ~(any(tmpB(:)==0))
+                               if  T_st >= 0 && T_st<100 && ~(any(tmpB(:)==0))
                                    Ap(i, j) = T_st;
                                    Bp(i, j) = 0;  
                                    array_list = [array_list;
@@ -217,8 +210,7 @@ classdef clothoidPathFinder
                                    [RES, fval] = fsolve(@obj.funcOfResiduals, [T_st t2_apr]);
                                    
                                    if norm(fval)<0.01
-                                       breakFlag = 1;
-                                       break;
+                                       
                                    end
                                end
                             end
@@ -226,12 +218,6 @@ classdef clothoidPathFinder
                         
                     end
                     
-                    if breakFlag==1
-                        break;
-                    end
-                end
-                if breakFlag==1
-                   break;
                 end
             end
                     

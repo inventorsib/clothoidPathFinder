@@ -84,25 +84,14 @@ classdef clothoidPathFinder
         end
         
         
-        %% NEWTON
-      
-        function [Y] = funcOfResiduals(obj, X)
-            % 2, 5 -auto
-            X = abs(X);
-            times = [obj.PARAM 0 X(1) X(2) 0];
-            [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(times, obj.controlVector,...
-            obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-            
-            Y = [y_a, sin(0.5*th_a)];
-        end
-        
         
         %% Find path
-        function [] = findPath(obj)
+        function [TSUM] = findPath(obj, c_sign, show, th_case)
         
+            global gStates
+            gStates = [];
             %% TODO: initial signs ???
-            control0 = -[1, -1, 0, -1, 1]; % initial signs of turns
-            times = [0, 0, 0, 0, 0];
+            control0 = c_sign*[1, -1, 0, -1, 1]; % initial signs of turns
             
             control = obj.maxSteeringVelocity*control0;
             obj.controlVector = control;
@@ -111,7 +100,7 @@ classdef clothoidPathFinder
             %% 
             tic
             
-            times_1 = 0:0.01:20; 
+            times_1 = 0:0.01:100; 
             
             Tsum_from_t1 = ones(size(times_1))*200;
             T_st_array = ones(size(times_1));
@@ -126,7 +115,7 @@ classdef clothoidPathFinder
             
                 i=i+1;
                 
-                [TSUM, t1_, t2, tst, cf] = obj.getIntervalTimes(t1, control0);
+                [TSUM, t1_, t2, tst, cf] = obj.getIntervalTimes(t1, control0, 0, th_case);
                 % вот тут ... 
                 
                 if cf==1
@@ -139,36 +128,27 @@ classdef clothoidPathFinder
                 T_2_array(i) = t2;
             end
             
-            return;
-%             
-%             %% fi_a - bad 0.34((
-% 
-%             [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(times, obj.controlVector,...
-%              obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle);
-% 
-%             %% figure
-%              global gStates
-%                          
-%              
-%              plot(gStates(:,1), gStates(:,2), '.', "LineWidth", 2);
-%              grid on; grid minor;
-%              axis equal
-% 
-%              %% return final 
-%              ret_x = x_a;
-%              ret_y = y_a;
-%              ret_th = th_a;
-%              ret_fi = fi_a;
-
-             toc
+            [mv, indx] = min(Tsum_from_t1);
+            t1 = T_1_array(indx);
+            disp(indx);
+            [TSUM, t1_, t2, tst, cf] = obj.getIntervalTimes(t1, control0, 1, th_case);
+            
+            if show==1
+                global gStates
+                plot(gStates(:,1), gStates(:,2), '-', "LineWidth", 2);
+                grid on; grid minor;
+                axis equal
+            end
+            
+            toc
         end
 
         
         %% NEW ALGORITHM
-        function [TSUM, t1, t2, tst, cf] = getIntervalTimes(obj, t1, control0)
+        function [TSUM, t1, t2, tst, cf] = getIntervalTimes(obj, t1, control0, rf, th_case)
             
             tst = 0;
-            TSUM = 200;
+            TSUM = 1000;
             cf = 0;
 
             times = zeros(1, 5); 
@@ -183,26 +163,21 @@ classdef clothoidPathFinder
 
             t0 = obj.maxSteeringAngle/obj.maxSteeringVelocity;
 
-            %% Find last control sign
-            control0(4) = abs(control0(4))*sign(th1);
-            control0(5) = -control0(4);
-
             %% In constrains
-
-            t2 = sqrt(abs(th1/(obj.velocity/obj.wheelBase*obj.maxSteeringVelocity)));
+            t2 = sqrt(abs((th1+th_case)/(obj.velocity/obj.wheelBase*obj.maxSteeringVelocity)));
 
             %% Out constrains 
             if t2>t0
-                t2 = abs(th1/(obj.velocity/obj.wheelBase*obj.maxSteeringAngle));
+                t2 = abs((th1+th_case)/(obj.velocity/obj.wheelBase*obj.maxSteeringAngle));
             end
 
+            %% Check t2
             if t2 < 0
                 cf = 1;
                 return;
             end
             %% TODO: Check 2pi or -2pi    
-            %% Check t2
-            %% If bad one of times pass and set NaN
+            
 
             %% Get residuasl for y
             times(4) = t2;
@@ -212,12 +187,15 @@ classdef clothoidPathFinder
             );
 
             %% Get Tst from y residual and th1 - final heading for first motion interval
-            if abs(y_a)<0.0
-                tst = 0;
-            else
-                tst = -y_a/(obj.velocity*sin(th1));
+          
+            if abs(sin(th1))<0.01
+                cf = 1;
+                return;
             end
-            times(3) = tst;
+            
+            tst = -y_a/(obj.velocity*sin(th1));
+            
+            times(3) = abs(tst);
 
             if tst < 0 || tst > 100
                 cf = 1;
@@ -230,40 +208,23 @@ classdef clothoidPathFinder
                 obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle ...
             );
 
-           [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAuto(...
-                times, obj.controlVector,...
-                obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle ...
-            );
-                
+            if rf == 1
+               [x_a, y_a, th_a, fi_a] = obj.buildPathAnalyticallyAutoREC(...
+                    times, obj.controlVector,...
+                    obj.initXPos, obj.initYPos, obj.initHeading, obj.initSteeringAngle ...
+                );
+            end
+            
+            if norm([y_a, sin(0.5*th_a), fi_a])>0.01
+                cf = 1;
+                return; 
+            end
+            
             TSUM = tst+t1+t2+ta2+ta5;                
         end
         
        
-        %% Get best Dubins path to line
-        function [best_x1] = getBestDubins2Line(obj, x0)
-    
-            obj.p_MinTurningRadius = obj.wheelBase/obj.maxSteeringAngle;
-
-            best_x1 = fminbnd(@obj.getDubinsPathLength, x0-1*obj.p_MinTurningRadius, x0+4*obj.p_MinTurningRadius);
-
-        end
-
-        function [length] = getDubinsPathLength(obj, x1)
-            
-            th1 = 0;
-            
-            dubConnObj = dubinsConnection;
-            
-            dubConnObj.MinTurningRadius = obj.p_MinTurningRadius;
-            
-            startPose = [obj.initXPos obj.initYPos obj.initHeading];
-            goalPose = [x1 obj.targetYPos th1];
-            
-            [pathSegObj, pathCosts] = connect(dubConnObj,startPose,goalPose);
-
-            length = pathCosts;
-            
-        end
+        
         
         %% Build path analytically
         function [x, y, th, fi] = buildPathAnalytically(obj, duration_intervals, control_vector, x, y, th, fi)
@@ -511,116 +472,6 @@ classdef clothoidPathFinder
         end
         
         
-        %% Utils
-        function has_diff_signs = check_signs(obj, matrix)
-            % Проверка наличия положительных и отрицательных элементов
-            has_positive = any(matrix(:) > 0);
-            has_negative = any(matrix(:) < 0);
-
-            % Если есть и положительные, и отрицательные элементы -> true
-            has_diff_signs = has_positive && has_negative;
-        end
-
-        function intersection_point = plane_intersection_z0(obj, P1, P2, P3)
-            % Проверяем размерности входных данных
-            P1 = P1(:)'; % Преобразуем в строку [x1, y1, z1]
-            P2 = P2(:)';
-            P3 = P3(:)';
-
-            % Находим самую нижнюю точку (с минимальным z)
-            points = [P1; P2; P3];
-            [~, min_idx] = min(points(:, 3));
-            min_z_point = points(min_idx, :);
-
-            % Вычисляем два вектора в плоскости
-            v1 = P2 - P1;
-            v2 = P3 - P1;
-
-            % Вычисляем нормаль к плоскости
-            n = cross(v1, v2);
-
-            % Проверяем, что векторы не коллинеарны
-            if norm(n) < 1e-10
-                error('Точки коллинеарны. Плоскость не определена.');
-            end
-
-            % Проверяем, горизонтальна ли плоскость (нормаль параллельна оси Z)
-            if abs(n(1)) < 1e-10 && abs(n(2)) < 1e-10
-                % Плоскость горизонтальна
-                if abs(min_z_point(3)) < 1e-10
-                    % Плоскость проходит через z=0
-                    intersection_point = [min_z_point(1), min_z_point(2), 0];
-                else
-                    % Плоскость не пересекает z=0
-                    intersection_point = [NaN, NaN, NaN];
-                end
-                return;
-            end
-
-            % Вычисляем d для уравнения плоскости: n_x*x + n_y*y + n_z*z = d
-            d = dot(n, P1);
-
-            % Уравнение линии пересечения при z=0: n_x*x + n_y*y = d
-            % Проекция точки (x0, y0) на эту линию в 2D
-            x0 = min_z_point(1);
-            y0 = min_z_point(2);
-            t = (n(1)*x0 + n(2)*y0 - d) / (n(1)^2 + n(2)^2);
-            x_proj = x0 - t * n(1);
-            y_proj = y0 - t * n(2);
-
-            intersection_point = [x_proj, y_proj, 0];
-        end
     end
-    
-    methods (Static)
-             function y = fast_sin(x)
-                % Приведение угла к диапазону [0, 2π)
-                x = mod(x, 2*pi);
-
-                % Определение знака и приведение к диапазону [0, π]
-                sign = 1;
-                if x > pi
-                    x = x - pi;
-                    sign = -1;
-                end
-
-                % Приведение к диапазону [0, π/2]
-                if x > pi/2
-                    x = pi - x;
-                end
-
-                % Аппроксимация рядом Тейлора (схема Горнера)
-                x2 = x .* x;
-                y = x .* (1 - x2/6 .* (1 - x2/20 .* (1 - x2/42)));
-
-                % Учет знака
-                y = sign .* y;
-            end
-
-            function y = fast_cos(x)
-                % Приведение угла к диапазону [0, 2π)
-                x = mod(x, 2*pi);
-
-                % Определение знака и приведение к диапазону [0, π]
-                sign = 1;
-                if x > pi
-                    x = 2*pi - x;
-                    sign = -1;
-                end
-
-                % Приведение к диапазону [0, π/2] и корректировка знака
-                if x > pi/2
-                    x = pi - x;
-                    sign = -sign;
-                end
-
-                % Аппроксимация рядом Тейлора (схема Горнера)
-                x2 = x .* x;
-                y = 1 - x2/2 .* (1 - x2/12 .* (1 - x2/30));
-
-                % Учет знака
-                y = sign .* y;
-            end
-        end
 end
 
